@@ -3,7 +3,6 @@ const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const express = require('express');
 
-// Express Server Setup for Render.com
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -15,55 +14,139 @@ app.listen(PORT, () => {
     console.log(`Server listening on port ${PORT}`);
 });
 
-// Telegram Bot Setup
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 const VOLTX_BASE_URL = 'https://api.2oo9.cloud/MXS47FLFX0U/tnevs/@public/api';
 
-// সব ধরনের কাজের সার্ভিস ও অ্যাপ আইকন ম্যাচিং ফাংশন
-function getAppIcon(serviceName) {
-    if (!serviceName) return '📱 অ্যাপ:';
+bot.onText(/\/start/, (msg) => {
+    const chatId = msg.chat.id;
+
+    const mainKeyboard = {
+        reply_markup: {
+            keyboard: [
+                [{ text: '💰 Balance' }, { text: '📩 Invite & Earn' }],
+                [{ text: '📲 Get Numbers' }],
+                [{ text: '❌ Close Menu' }]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: false
+        }
+    };
+
+    bot.sendMessage(chatId, "👋 Welcome! Choose an option from the menu below:", mainKeyboard);
+});
+
+bot.on('message', (msg) => {
+    const chatId = msg.chat.id;
+    const text = msg.text;
+
+    if (text === '💰 Balance') {
+        bot.sendMessage(chatId, "💳 Your Balance: $0.00\n\n(Minimum recharge applies for new users.)");
+    } 
+    else if (text === '📩 Invite & Earn') {
+        bot.sendMessage(chatId, `🎁 Your Referral Link:\nhttps://t.me/${msg.from.username || 'bot'}?start=${chatId}\n\nEarn rewards per successful referral!`);
+    } 
+    else if (text === '❌ Close Menu') {
+        bot.sendMessage(chatId, "Menu closed. Type /start to re-open.", {
+            reply_markup: { remove_keyboard: true }
+        });
+    } 
+    else if (text === '📲 Get Numbers' || text === '/getnum') {
+        const serviceOptions = {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '✈️ Telegram', callback_data: 'rid_telegram' },
+                        { text: '💬 WhatsApp', callback_data: 'rid_whatsapp' }
+                    ],
+                    [
+                        { text: '🔹 IMO', callback_data: 'rid_imo' },
+                        { text: '📘 Facebook', callback_data: 'rid_facebook' }
+                    ],
+                    [
+                        { text: '🔴 Google / Gmail', callback_data: 'rid_google' },
+                        { text: '🎵 TikTok', callback_data: 'rid_tiktok' }
+                    ]
+                ]
+            }
+        };
+
+        bot.sendMessage(chatId, "📲 Select the app service you need:", serviceOptions);
+    }
+});
+
+bot.on('callback_query', async (query) => {
+    const chatId = query.message.chat.id;
+    const messageId = query.message.message_id;
+    const data = query.data;
+
+    if (!data.startsWith('rid_')) return;
+
+    const serviceName = data.replace('rid_', '');
+    let rangeId = "26134"; 
+
+    bot.answerCallbackQuery(query.id, { text: `Processing ${serviceName.toUpperCase()} number...` });
     
-    const name = serviceName.toLowerCase();
+    bot.editMessageText(`⏳ Fetching number for ${serviceName.toUpperCase()}, please wait...`, {
+        chat_id: chatId,
+        message_id: messageId
+    });
 
-    // Messaging Apps
-    if (name.includes('telegram') || name.includes('tg')) return '✈️ Telegram';
-    if (name.includes('whatsapp') || name.includes('wa')) return '💬 WhatsApp';
-    if (name.includes('imo')) return '🔹 IMO';
-    if (name.includes('messenger')) return '💙 Messenger';
-    if (name.includes('viber')) return '💜 Viber';
-    if (name.includes('line')) return '🟢 Line';
-    if (name.includes('wechat')) return '🟩 WeChat';
-    if (name.includes('signal')) return '🔒 Signal';
+    try {
+        const response = await axios.post(
+            `${VOLTX_BASE_URL}/getnum`,
+            { rid: rangeId },
+            {
+                headers: {
+                    'mauthapi': process.env.VOLTX_API_KEY,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
 
-    // Social Media
-    if (name.includes('facebook') || name.includes('fb')) return '📘 Facebook';
-    if (name.includes('instagram') || name.includes('ig')) return '📸 Instagram';
-    if (name.includes('tik') || name.includes('tok')) return '🎵 TikTok';
-    if (name.includes('twitter') || name.includes('x')) return '🐦 Twitter/X';
-    if (name.includes('snap') || name.includes('chat')) return '👻 Snapchat';
-    if (name.includes('reddit')) return '🤖 Reddit';
+        const resData = response.data;
 
-    // Google & Microsoft
-    if (name.includes('google') || name.includes('gmail')) return '🔴 Google';
-    if (name.includes('youtube')) return '▶️ YouTube';
-    if (name.includes('outlook') || name.includes('hotmail')) return '📧 Outlook';
+        if (resData && (resData.meta?.code === 200 || resData.meta?.status === 'ok')) {
+            const phoneNumber = resData.data?.full_number || resData.data?.national_number || 'N/A';
+            const country = resData.data?.country || 'N/A';
 
-    // Crypto & Wallet
-    if (name.includes('binance')) return '🟡 Binance';
-    if (name.includes('bybit')) return '🖤 Bybit';
-    if (name.includes('kucoin')) return '🟢 KuCoin';
-    if (name.includes('trust')) return '🛡️ Trust Wallet';
+            const resultText = 
+`📱 **Your Numbers — 🇩🇿 ${country}**\n\n` +
+`📞 \`+${phoneNumber}\`\n\n` +
+`⏳ **Waiting for OTP...**\n` +
+`*Tap a number to copy it!*\n` +
+`_You'll be notified here when OTP arrives._`;
 
-    // Entertainment & Utility
-    if (name.includes('discord')) return '👾 Discord';
-    if (name.includes('netflix')) return '🍿 Netflix';
-    if (name.includes('paypal')) return '💳 PayPal';
-    if (name.includes('amazon')) return '📦 Amazon';
-    if (name.includes('uber')) return '🚗 Uber';
-    
-    // অন্য যেকোনো কাজের জন্য ডিফল্ট আইকন
-    return `📱 ${serviceName.toUpperCase()}`;
-}
+            const actionButtons = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '🔄 Change Number', callback_data: 'rid_' + serviceName },
+                            { text: '🌍 Change Country', callback_data: 'change_country' }
+                        ]
+                    ]
+                },
+                parse_mode: 'Markdown'
+            };
+
+            bot.editMessageText(resultText, {
+                chat_id: chatId,
+                message_id: messageId,
+                ...actionButtons
+            });
+        } else {
+            bot.editMessageText(
+                `⚠️ Number unavailable!\nMessage: ${resData.message || 'Out of stock or balance low.'}`, 
+                { chat_id: chatId, message_id: messageId }
+            );
+        }
+    } catch (error) {
+        console.error("API Error:", error.message);
+        bot.editMessageText(
+            `❌ API Connection Error! Check your API key or stock.`, 
+            { chat_id: chatId, message_id: messageId }
+        );
+    }
+});}
 
 // Command: /start
 bot.onText(/\/start/, (msg) => {
